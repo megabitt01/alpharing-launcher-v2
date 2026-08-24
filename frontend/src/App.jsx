@@ -106,7 +106,16 @@ function App({ buildInfo = "", modInfo: initialModInfo = "" }) {
   return (
     <main className="container">
       <div className="background" ref={backgroundRef}>
-        <video className="background-video" src={bkgVideo} autoPlay loop muted playsInline />
+        <video 
+          className="background-video" 
+          src={bkgVideo} 
+          autoPlay 
+          loop 
+          muted 
+          playsInline 
+          onError={(e) => console.log("VIDEO ERROR:", e.currentTarget.error)}
+          onLoadedData={() => console.log("VIDEO LOADED")}
+        />
         <img className="logo" src={alphaRingLogo} alt="AlphaRing" />
         {showLog ? <div className="log-panel" style={logPosition ?? undefined}><p className="log-message">{log || "Starting Up..."}</p></div> : (
           <div className="menu">
