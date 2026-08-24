@@ -1,0 +1,125 @@
+@font-face {
+  font-family: "TVNord";
+  src: url("assets/tvnord.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}
+
+body {
+  margin: 0px;  
+  height: 100vh;
+  overflow: hidden;
+  font-family: "TVNord";
+}
+
+#root {
+  height: 100%;
+}
+
+main {
+  width: 100%;
+  height: 100%;
+}
+
+.logo {
+  position: absolute;
+  top: 10%;
+  width: 100%;
+  z-index: 100;
+}
+
+.mc {
+  height: 80%;
+  position: absolute;
+  bottom: 0px;
+  left: 0px;
+}
+
+.background {
+  display: flex;
+  position: relative;
+  height: 100%;
+  width: 100%;
+}
+
+.background-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.menu {
+  position: absolute;
+  z-index: 200;
+  bottom: 20%;
+  left: 30%;
+  width: 40%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.menu-button {
+  padding: 12px 28px;
+  font-family: "TVNord";
+  font-size: 18px;
+  color: #86e1ff;
+  background: rgba(0, 0, 0, 0.5);
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-radius: 4px;
+  cursor: pointer;
+  outline: none;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.menu-button:hover {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+.menu-button.selected {
+  border-color: #62cbee;
+  background: rgba(0, 0, 0, 0.8);
+  transform: scale(1.05);
+}
+
+.log-panel {
+  position: absolute;
+  z-index: 200;
+  top: 20%;
+  left: 30%;
+  width: 40%;
+}
+
+.log-message {
+  margin: 0;
+  padding: 12px 28px;
+  font-size: 18px;
+  color: white;
+  background: rgba(0, 0, 0, 0.5);
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-radius: 4px;
+  text-align: center;
+}
+
+.info {
+  bottom: 0;
+  right: 0;
+  margin: 0px;
+  padding: 0px;
+  position: absolute;
+  text-align: center;
+  user-select: none;
+  color: white;
+}
+
+@media screen and (min-width: 1000px) {
+  .menu-button {
+    font-size: 32px;
+  }
+
+  .log-message {
+    font-size: 32px;
+  }
+}
