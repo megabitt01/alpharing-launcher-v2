@@ -19,19 +19,35 @@ import (
 )
 
 type App struct {
-	ctx context.Context
+	ctx             context.Context
+	videoServerBase string
 }
 
 func NewApp() *App { return &App{} }
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	if base, err := startVideoServer(); err == nil {
+		a.videoServerBase = base
+	} else {
+		a.log(fmt.Sprintf("Error starting video server: %s", err))
+	}
 	for _, argument := range os.Args[1:] {
 		if argument == "-fullscreen" {
 			wailsruntime.WindowFullscreen(ctx)
 			break
 		}
 	}
+}
+
+// BackgroundVideoURLs returns the background video's sources, in preferred
+// order, served over a real loopback HTTP URL rather than the wails://
+// custom scheme (see videoserver.go for why).
+func (a *App) BackgroundVideoURLs() []string {
+	if a.videoServerBase == "" {
+		return nil
+	}
+	return []string{a.videoServerBase + "/bkgVideo.webm", a.videoServerBase + "/bkgVideo.mp4"}
 }
 
 const (

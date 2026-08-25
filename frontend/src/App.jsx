@@ -1,13 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import { EventsOn, Quit } from "../wailsjs/runtime/runtime";
-import { LatestModVersion, OpenInstallDir, Play } from "../wailsjs/go/main/App";
+import { BackgroundVideoURLs, LatestModVersion, OpenInstallDir, Play } from "../wailsjs/go/main/App";
 import alphaRingLogo from "./assets/logo_alpharing.png";
-import bkgVideo from "./assets/bkgVideo.mp4";
+import bkgVideoMp4 from "./assets/bkgVideo.mp4";
+import bkgVideoWebm from "./assets/bkgVideo.webm";
 import "./App.css";
 
 const CLOSE_DELAY_MS = 1000;
 const ERROR_DISPLAY_MS = 2000;
 const GAMEPAD_AXIS_DEADZONE = 0.5;
+const VIDEO_MIME_TYPES = { mp4: "video/mp4", webm: "video/webm" };
+// Fallback for contexts without the Wails runtime (e.g. plain browser preview).
+// The real fix for Linux is BackgroundVideoURLs(), served over loopback HTTP
+// instead of the wails:// scheme WebKitGTK's video decoder can't read from.
+const DEFAULT_VIDEO_SOURCES = [
+  { src: bkgVideoWebm, type: VIDEO_MIME_TYPES.webm },
+  { src: bkgVideoMp4, type: VIDEO_MIME_TYPES.mp4 },
+];
 
 const closeWindowDelayed = () => {
   setTimeout(() => Quit(), CLOSE_DELAY_MS);
@@ -31,10 +40,29 @@ function App({ buildInfo = "", modInfo: initialModInfo = "" }) {
   const backgroundRef = useRef(null);
   const buttonRefs = useRef([]);
   const errorRevertTimeoutRef = useRef(null);
+  const videoRef = useRef(null);
+  const [videoSources, setVideoSources] = useState(DEFAULT_VIDEO_SOURCES);
 
   useEffect(() => {
     LatestModVersion().then((tag) => setModInfo(`AlphaRing v${tag}`)).catch((error) => console.error("Error fetching latest AlphaRing version:", error));
   }, []);
+
+  useEffect(() => {
+    BackgroundVideoURLs().then((urls) => {
+      if (!urls || urls.length === 0) return;
+      setVideoSources(urls.map((url) => ({ src: url, type: VIDEO_MIME_TYPES[url.split(".").pop()] })));
+    }).catch((error) => console.error("Error fetching background video URLs:", error));
+  }, []);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const tryPlay = () => video.play().catch((error) => console.error("Error playing background video:", error));
+    video.load();
+    tryPlay();
+    video.addEventListener("loadeddata", tryPlay);
+    return () => video.removeEventListener("loadeddata", tryPlay);
+  }, [videoSources]);
 
   const moveSelection = (delta) => setSelectedIndex((selectedIndexRef.current + delta + MENU_BUTTONS.length) % MENU_BUTTONS.length);
 
@@ -106,16 +134,19 @@ function App({ buildInfo = "", modInfo: initialModInfo = "" }) {
   return (
     <main className="container">
       <div className="background" ref={backgroundRef}>
-        <video 
-          className="background-video" 
-          src={bkgVideo} 
-          autoPlay 
-          loop 
-          muted 
-          playsInline 
+        <video
+          ref={videoRef}
+          className="background-video"
+          autoPlay
+          loop
+          muted
+          playsInline
+          preload="auto"
           onError={(e) => console.log("VIDEO ERROR:", e.currentTarget.error)}
           onLoadedData={() => console.log("VIDEO LOADED")}
-        />
+        >
+          {videoSources.map((source) => <source key={source.src} src={source.src} type={source.type} />)}
+        </video>
         <img className="logo" src={alphaRingLogo} alt="AlphaRing" />
         {showLog ? <div className="log-panel" style={logPosition ?? undefined}><p className="log-message">{log || "Starting Up..."}</p></div> : (
           <div className="menu">
