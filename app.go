@@ -71,12 +71,24 @@ func (a *App) log(message string) {
 	}
 }
 
+func configDir() (string, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		exe, exeErr := os.Executable()
+		if exeErr != nil {
+			return "", exeErr
+		}
+		return filepath.Dir(exe), nil
+	}
+	return filepath.Join(dir, "alpharing"), nil
+}
+
 func configPath() string {
-	exe, err := os.Executable()
+	dir, err := configDir()
 	if err != nil {
 		return configFileName
 	}
-	return filepath.Join(filepath.Dir(exe), configFileName)
+	return filepath.Join(dir, configFileName)
 }
 
 func defaultGamePath() string {
@@ -90,6 +102,9 @@ func defaultGamePath() string {
 func readConfigPath() (string, error) {
 	path := configPath()
 	if _, err := os.Stat(path); os.IsNotExist(err) {
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			return "", err
+		}
 		if err := os.WriteFile(path, []byte(fmt.Sprintf("path = %q\n", defaultGamePath())), 0644); err != nil {
 			return "", err
 		}
@@ -405,11 +420,13 @@ func (a *App) LatestModVersion() (string, error) {
 }
 
 func (a *App) OpenInstallDir() error {
-	exe, err := os.Executable()
+	directory, err := configDir()
 	if err != nil {
 		return err
 	}
-	directory := filepath.Dir(exe)
+	if err := os.MkdirAll(directory, 0755); err != nil {
+		return err
+	}
 	if runtime.GOOS == "windows" {
 		return exec.Command("explorer.exe", directory).Start()
 	}

@@ -13,6 +13,9 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+//go:embed build/appicon.png
+var appIcon []byte
+
 func main() {
 	// WebKitGTK's DMA-BUF renderer crashes on Wayland with "Error 71 (Protocol error)"
 	// on many compositor/driver combos when hardware acceleration is enabled.
@@ -32,6 +35,12 @@ func main() {
 		},
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
 		Linux: &linux.Options{
+			Icon: appIcon,
+			// Must match the Icon= name and Exec= basename in the .desktop
+			// file install.sh installs, so window managers that resolve the
+			// taskbar icon via desktop-file matching (e.g. KDE Plasma) find
+			// it instead of falling back to a generic binary icon.
+			ProgramName:      "alpharing",
 			WebviewGpuPolicy: linux.WebviewGpuPolicyAlways,
 		},
 		OnStartup: app.startup,
