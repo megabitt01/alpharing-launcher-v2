@@ -1,5 +1,6 @@
 # AlphaRing Launcher
 <img width="1005" height="757" alt="image" src="https://github.com/user-attachments/assets/f0936361-728f-45af-9073-d6347b16b4ef" />
+This project is a launcher for my [AlphaRing mod](https://github.com/megabitt01/AlphaRing/tree/master-chief) for Halo The Master Chief Collection.
 
 ## Installation
 ### Windows
