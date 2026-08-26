@@ -20,3 +20,7 @@ to this in your browser, and you can call your Go code from devtools.
 
 To build a redistributable, production mode package, use `wails build`.
 For building on Linux, you may need to run `wails build -tags webkit2_41`.
+
+## Todo
+For Windows:
+The AlphaRing pipeline needs to start publishing WTSAPI32.dll.sha256 in order for fixes to work otherwise, users will get a Windows Defender issue.
