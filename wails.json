@@ -9,5 +9,12 @@
   "author": {
     "name": "Jack Bittner",
     "email": "jack.bittner@outlook.com"
+  },
+  "info": {
+    "companyName": "AlphaRing",
+    "productName": "AlphaRing Launcher",
+    "productVersion": "2.0.1",
+    "copyright": "Copyright © 2026 Jack Bittner",
+    "comments": "Halo MCC splitscreen mod launcher"
   }
 }
