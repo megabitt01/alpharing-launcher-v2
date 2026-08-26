@@ -36,6 +36,45 @@ var nonGameProcessNames = map[string]bool{
 	"explorer.exe":   true,
 }
 
+// matchingProcessNames returns a "comm(pid)" descriptor for every process
+// currently making processRunningUnder report the game as running, so
+// callers can surface exactly what's being waited on instead of guessing.
+func matchingProcessNames(dir string) []string {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil
+	}
+	want := "SteamAppId=" + strconv.Itoa(workshopAppID)
+	var matches []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if _, err := strconv.Atoi(entry.Name()); err != nil {
+			continue
+		}
+		comm, err := os.ReadFile("/proc/" + entry.Name() + "/comm")
+		if err != nil {
+			continue
+		}
+		name := strings.TrimSpace(string(comm))
+		if nonGameProcessNames[name] {
+			continue
+		}
+		environ, err := os.ReadFile("/proc/" + entry.Name() + "/environ")
+		if err != nil {
+			continue
+		}
+		for _, kv := range strings.Split(string(environ), "\x00") {
+			if kv == want {
+				matches = append(matches, name+"("+entry.Name()+")")
+				break
+			}
+		}
+	}
+	return matches
+}
+
 // processRunningUnder reports whether MCC is currently running. gamePath's
 // Unix path doesn't correspond 1:1 with what Proton/wine report as a
 // process's exe or argv (the game runs under a translated Windows path
@@ -45,31 +84,5 @@ var nonGameProcessNames = map[string]bool{
 // excluding processes that aren't a reliable sign of the game actually
 // running (see nonGameProcessNames).
 func processRunningUnder(dir string) bool {
-	entries, err := os.ReadDir("/proc")
-	if err != nil {
-		return false
-	}
-	want := "SteamAppId=" + strconv.Itoa(workshopAppID)
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		if _, err := strconv.Atoi(entry.Name()); err != nil {
-			continue
-		}
-		comm, err := os.ReadFile("/proc/" + entry.Name() + "/comm")
-		if err == nil && nonGameProcessNames[strings.TrimSpace(string(comm))] {
-			continue
-		}
-		environ, err := os.ReadFile("/proc/" + entry.Name() + "/environ")
-		if err != nil {
-			continue
-		}
-		for _, kv := range strings.Split(string(environ), "\x00") {
-			if kv == want {
-				return true
-			}
-		}
-	}
-	return false
+	return len(matchingProcessNames(dir)) > 0
 }

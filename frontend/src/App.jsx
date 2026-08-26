@@ -8,11 +8,9 @@ import "./App.css";
 
 const CLOSE_DELAY_MS = 1000;
 const ERROR_DISPLAY_MS = 2000;
+const ACTION_TIMEOUT_MS = 10000;
 const GAMEPAD_AXIS_DEADZONE = 0.5;
 const VIDEO_MIME_TYPES = { mp4: "video/mp4", webm: "video/webm" };
-// Fallback for contexts without the Wails runtime (e.g. plain browser preview).
-// The real fix for Linux is BackgroundVideoURLs(), served over loopback HTTP
-// instead of the wails:// scheme WebKitGTK's video decoder can't read from.
 const DEFAULT_VIDEO_SOURCES = [
   { src: bkgVideoWebm, type: VIDEO_MIME_TYPES.webm },
   { src: bkgVideoMp4, type: VIDEO_MIME_TYPES.mp4 },
@@ -40,6 +38,7 @@ function App({ buildInfo = "", modInfo: initialModInfo = "" }) {
   const backgroundRef = useRef(null);
   const buttonRefs = useRef([]);
   const errorRevertTimeoutRef = useRef(null);
+  const forceRevertTimeoutRef = useRef(null);
   const videoRef = useRef(null);
   const [videoSources, setVideoSources] = useState(DEFAULT_VIDEO_SOURCES);
 
@@ -68,6 +67,7 @@ function App({ buildInfo = "", modInfo: initialModInfo = "" }) {
 
   const runAction = (index) => {
     if (errorRevertTimeoutRef.current) clearTimeout(errorRevertTimeoutRef.current);
+    if (forceRevertTimeoutRef.current) clearTimeout(forceRevertTimeoutRef.current);
     setSelectedIndex(index);
     const button = buttonRefs.current[index];
     const container = backgroundRef.current;
@@ -78,9 +78,24 @@ function App({ buildInfo = "", modInfo: initialModInfo = "" }) {
     }
     setLog(MENU_BUTTONS[index].startMessage ?? "");
     setShowLog(true);
+
+    // Safety net: no matter what the backend action does (hangs, errors,
+    // takes longer than expected), the UI always becomes usable again after
+    // ACTION_TIMEOUT_MS. `settled` stops a late resolution/rejection of the
+    // original action from re-triggering the log panel after that.
+    let settled = false;
+    forceRevertTimeoutRef.current = setTimeout(() => {
+      settled = true;
+      setShowLog(false);
+    }, ACTION_TIMEOUT_MS);
+
     Promise.resolve(MENU_BUTTONS[index].action()).then(() => {
+      if (settled) return;
+      clearTimeout(forceRevertTimeoutRef.current);
       if (MENU_BUTTONS[index].returnToMenu) setShowLog(false);
     }).catch((error) => {
+      if (settled) return;
+      clearTimeout(forceRevertTimeoutRef.current);
       console.error("Error:", error);
       setLog(`Error: ${error}`);
       errorRevertTimeoutRef.current = setTimeout(() => setShowLog(false), ERROR_DISPLAY_MS);

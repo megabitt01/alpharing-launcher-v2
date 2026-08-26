@@ -333,8 +333,9 @@ func (a *App) waitForGameExit(gamePath string) {
 	deadline := time.Now().Add(gameStartTimeout)
 	started := false
 	for time.Now().Before(deadline) {
-		if processRunningUnder(gamePath) {
+		if names := matchingProcessNames(gamePath); len(names) > 0 {
 			started = true
+			a.log(fmt.Sprintf("Game process detected: %s", strings.Join(names, ", ")))
 			break
 		}
 		time.Sleep(processPollInterval)
@@ -342,7 +343,16 @@ func (a *App) waitForGameExit(gamePath string) {
 	if !started {
 		return
 	}
-	for processRunningUnder(gamePath) {
+	for tick := 0; ; tick++ {
+		names := matchingProcessNames(gamePath)
+		if len(names) == 0 {
+			break
+		}
+		// Re-log periodically (not every poll) so anyone stuck here can see
+		// exactly which process is being waited on, without flooding the log.
+		if tick%10 == 0 {
+			a.log(fmt.Sprintf("Waiting for MCC to close (still running: %s)...", strings.Join(names, ", ")))
+		}
 		time.Sleep(processPollInterval)
 	}
 }

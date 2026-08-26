@@ -8,3 +8,7 @@ package main
 func processRunningUnder(dir string) bool {
 	return false
 }
+
+func matchingProcessNames(dir string) []string {
+	return nil
+}
