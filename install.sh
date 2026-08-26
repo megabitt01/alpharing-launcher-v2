@@ -9,6 +9,14 @@ APPID="976730"
 VCREDIST_URL="https://aka.ms/vs/17/release/vc_redist.x64.exe"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 COMMAND_NAME="alpharing"
+REPO="megabitt01/alpharing-launcher-v2"
+RELEASE_ASSET="AlphaRingLauncher_Linux"
+
+DOWNLOADED_TMP_DIR=""
+cleanup() {
+    [ -n "$DOWNLOADED_TMP_DIR" ] && rm -rf "$DOWNLOADED_TMP_DIR"
+}
+trap cleanup EXIT
 
 USER_INSTALL=0
 UNINSTALL=0
@@ -86,8 +94,42 @@ for candidate in \
     fi
 done
 
+RELEASE_TAG=""
+download_release_binary() {
+    echo "No local build found. Downloading latest release from GitHub ($REPO)..."
+    local api_url="https://api.github.com/repos/$REPO/releases/latest"
+    local release_json
+    release_json="$(curl -fsSL "$api_url")" || { echo "error: failed to query $api_url" >&2; return 1; }
+
+    RELEASE_TAG="$(printf '%s' "$release_json" | grep -o '"tag_name": *"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"
+
+    local download_url
+    download_url="$(printf '%s' "$release_json" | grep -o "\"browser_download_url\": *\"[^\"]*/$RELEASE_ASSET\"" | head -1 | sed -E 's/.*"(https:[^"]+)"/\1/')"
+    if [ -z "$download_url" ]; then
+        echo "error: could not find an asset named '$RELEASE_ASSET' in the latest release." >&2
+        return 1
+    fi
+
+    DOWNLOADED_TMP_DIR="$(mktemp -d)"
+    local dest="$DOWNLOADED_TMP_DIR/$RELEASE_ASSET"
+    echo "Downloading $download_url..."
+    if ! curl -fL --output "$dest" "$download_url"; then
+        echo "error: failed to download $download_url" >&2
+        rm -rf "$DOWNLOADED_TMP_DIR"
+        DOWNLOADED_TMP_DIR=""
+        return 1
+    fi
+
+    chmod +x "$dest"
+    BINARY_SRC="$dest"
+}
+
 if [ -z "$BINARY_SRC" ]; then
-    echo "error: could not find the alpharing-launcher-v2 binary." >&2
+    download_release_binary || true
+fi
+
+if [ -z "$BINARY_SRC" ]; then
+    echo "error: could not find or download the alpharing-launcher-v2 binary." >&2
     echo "Build it first with: wails build -tags webkit2_41" >&2
     exit 1
 fi
@@ -128,8 +170,24 @@ echo "Installed '$COMMAND_NAME' to $INSTALL_DIR"
 # desktops, notably KDE Plasma and GNOME, resolve the taskbar icon via the
 # .desktop file's Icon=, matched to the running window through its WM_CLASS,
 # rather than the raw icon pixmap the window itself reports)
+ICON_SRC="$SCRIPT_DIR/build/appicon.png"
+if [ ! -f "$ICON_SRC" ]; then
+    ICON_SRC=""
+    if [ -n "$RELEASE_TAG" ]; then
+        [ -n "$DOWNLOADED_TMP_DIR" ] || DOWNLOADED_TMP_DIR="$(mktemp -d)"
+        CANDIDATE_ICON="$DOWNLOADED_TMP_DIR/appicon.png"
+        if curl -fsSL --output "$CANDIDATE_ICON" "https://raw.githubusercontent.com/$REPO/$RELEASE_TAG/build/appicon.png"; then
+            ICON_SRC="$CANDIDATE_ICON"
+        fi
+    fi
+fi
+
 $BIN_SUDO mkdir -p "$ICON_DIR" "$DESKTOP_DIR"
-$BIN_SUDO install -m 644 "$SCRIPT_DIR/build/appicon.png" "$ICON_FILE"
+if [ -n "$ICON_SRC" ]; then
+    $BIN_SUDO install -m 644 "$ICON_SRC" "$ICON_FILE"
+else
+    echo "warning: could not find appicon.png; skipping icon install." >&2
+fi
 TMP_DESKTOP="$(mktemp)"
 cat > "$TMP_DESKTOP" <<EOF
 [Desktop Entry]
