@@ -41,9 +41,6 @@ func (a *App) startup(ctx context.Context) {
 	}
 }
 
-// BackgroundVideoURLs returns the background video's sources, in preferred
-// order, served over a real loopback HTTP URL rather than the wails://
-// custom scheme (see videoserver.go for why).
 func (a *App) BackgroundVideoURLs() []string {
 	if a.videoServerBase == "" {
 		return nil
@@ -58,9 +55,6 @@ const (
 	configFileName = "launcher.cfg"
 	workshopAppID  = 976730
 	releaseURL     = "https://api.github.com/repos/megabitt01/AlphaRing/releases/latest"
-
-	gameStartTimeout    = 5 * time.Minute
-	processPollInterval = 1 * time.Second
 )
 
 var workshopItems = []uint64{3686670451, 3730810482}
@@ -365,40 +359,9 @@ func (a *App) launch(gamePath string, vanilla bool) error {
 	if err := command.Start(); err != nil {
 		return err
 	}
-	a.waitForGameExit(gamePath)
+	a.log("Game launched, closing launcher...")
+	wailsruntime.Quit(a.ctx)
 	return nil
-}
-
-// waitForGameExit blocks until the game process appears under gamePath and
-// then disappears again, so Play() only returns once MCC has actually
-// closed. If the game never starts within gameStartTimeout, it gives up
-// and returns immediately rather than blocking forever.
-func (a *App) waitForGameExit(gamePath string) {
-	deadline := time.Now().Add(gameStartTimeout)
-	started := false
-	for time.Now().Before(deadline) {
-		if names := matchingProcessNames(gamePath); len(names) > 0 {
-			started = true
-			a.log(fmt.Sprintf("Game process detected: %s", strings.Join(names, ", ")))
-			break
-		}
-		time.Sleep(processPollInterval)
-	}
-	if !started {
-		return
-	}
-	for tick := 0; ; tick++ {
-		names := matchingProcessNames(gamePath)
-		if len(names) == 0 {
-			break
-		}
-		// Re-log periodically (not every poll) so anyone stuck here can see
-		// exactly which process is being waited on, without flooding the log.
-		if tick%10 == 0 {
-			a.log(fmt.Sprintf("Waiting for MCC to close (still running: %s)...", strings.Join(names, ", ")))
-		}
-		time.Sleep(processPollInterval)
-	}
 }
 
 func (a *App) checkMod(gamePath string, vanilla bool) error {
