@@ -94,30 +94,94 @@ func defaultGamePath() string {
 	return filepath.Join(home, ".local/share/Steam", gameSubpath)
 }
 
-func readConfigPath() (string, error) {
+// config holds the settings persisted in launcher.cfg, keyed by name.
+// "gamePath" is the MCC installation folder and "steamPath" is the Steam
+// executable; both are auto-detected when possible and otherwise filled in
+// by prompting the user with a native file/folder browser (see
+// promptDirectory/promptFile).
+type config map[string]string
+
+var configKeys = []string{"gamePath", "steamPath"}
+
+func readConfig() (config, error) {
 	path := configPath()
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-			return "", err
-		}
-		if err := os.WriteFile(path, []byte(fmt.Sprintf("path = %q\n", defaultGamePath())), 0644); err != nil {
-			return "", err
+		gamePath := defaultGamePath()
+		steamPath, _ := locateSteamExecutable(gamePath)
+		if err := writeConfig(config{"gamePath": gamePath, "steamPath": steamPath}); err != nil {
+			return nil, err
 		}
 	}
 	contents, err := os.ReadFile(path)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
+	cfg := config{}
 	for _, line := range strings.Split(string(contents), "\n") {
 		key, value, ok := strings.Cut(line, "=")
-		if ok && strings.TrimSpace(key) == "path" {
-			value = strings.Trim(strings.TrimSpace(value), `"`)
-			if value != "" {
-				return filepath.Clean(value), nil
-			}
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		value = strings.Trim(strings.TrimSpace(value), `"`)
+		if key != "" {
+			cfg[key] = value
 		}
 	}
-	return "", fmt.Errorf("config file does not contain a path")
+	return cfg, nil
+}
+
+func writeConfig(cfg config) error {
+	path := configPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	var builder strings.Builder
+	for _, key := range configKeys {
+		fmt.Fprintf(&builder, "%s = %q\n", key, cfg[key])
+	}
+	return os.WriteFile(path, []byte(builder.String()), 0644)
+}
+
+func setConfigValue(key, value string) error {
+	cfg, err := readConfig()
+	if err != nil {
+		cfg = config{}
+	}
+	cfg[key] = value
+	return writeConfig(cfg)
+}
+
+// nearestExistingDir walks up from path until it finds a directory that
+// exists, for use as a dialog's starting directory (Wails errors if given a
+// starting directory that doesn't exist). Returns "" if none is found.
+func nearestExistingDir(path string) string {
+	for path != "" {
+		if info, err := os.Stat(path); err == nil && info.IsDir() {
+			return path
+		}
+		parent := filepath.Dir(path)
+		if parent == path {
+			break
+		}
+		path = parent
+	}
+	return ""
+}
+
+func (a *App) promptDirectory(title, hint string) (string, error) {
+	return wailsruntime.OpenDirectoryDialog(a.ctx, wailsruntime.OpenDialogOptions{
+		Title:            title,
+		DefaultDirectory: nearestExistingDir(hint),
+	})
+}
+
+func (a *App) promptFile(title, hint string, filters []wailsruntime.FileFilter) (string, error) {
+	return wailsruntime.OpenFileDialog(a.ctx, wailsruntime.OpenDialogOptions{
+		Title:            title,
+		DefaultDirectory: nearestExistingDir(hint),
+		Filters:          filters,
+	})
 }
 
 func steamRoots(gamePath string) []string {
@@ -146,37 +210,96 @@ func libraryFolders(path string) []string {
 	return libraries
 }
 
-func findGamePath() (string, error) {
-	configured, err := readConfigPath()
-	if err != nil {
-		return "", err
+func locateGamePath(configured string) (string, bool) {
+	if configured == "" {
+		return "", false
 	}
+	configured = filepath.Clean(configured)
 	for _, root := range steamRoots(configured) {
 		libraries := append([]string{root}, libraryFolders(root)...)
 		for _, library := range libraries {
 			candidate := filepath.Join(library, gameSubpath)
 			if info, statErr := os.Stat(candidate); statErr == nil && info.IsDir() {
-				return candidate, nil
+				return candidate, true
 			}
 		}
 	}
 	if info, statErr := os.Stat(configured); statErr == nil && info.IsDir() {
-		return configured, nil
+		return configured, true
 	}
-	return "", fmt.Errorf("please specify game location in config file")
+	return "", false
 }
 
-func steamExecutable(gamePath string) string {
+func (a *App) findGamePath() (string, error) {
+	cfg, err := readConfig()
+	if err != nil {
+		return "", err
+	}
+	if path, ok := locateGamePath(cfg["gamePath"]); ok {
+		return path, nil
+	}
+	a.log("Could not locate the MCC installation, please select the game folder...")
+	selected, err := a.promptDirectory("Select the Halo: The Master Chief Collection folder", cfg["gamePath"])
+	if err != nil {
+		return "", fmt.Errorf("could not open folder browser: %w", err)
+	}
+	if selected == "" {
+		return "", fmt.Errorf("game location was not specified")
+	}
+	selected = filepath.Clean(selected)
+	if err := setConfigValue("gamePath", selected); err != nil {
+		return "", err
+	}
+	return selected, nil
+}
+
+func locateSteamExecutable(gamePath string) (string, bool) {
 	if runtime.GOOS != "windows" {
-		return "steam"
+		if path, err := exec.LookPath("steam"); err == nil {
+			return path, true
+		}
+		return "", false
 	}
 	for _, root := range steamRoots(gamePath) {
 		candidate := filepath.Join(root, "steam.exe")
 		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			return candidate
+			return candidate, true
 		}
 	}
-	return "steam.exe"
+	return "", false
+}
+
+func (a *App) steamExecutable(gamePath string) (string, error) {
+	cfg, err := readConfig()
+	if err != nil {
+		return "", err
+	}
+	if configured := cfg["steamPath"]; configured != "" {
+		if info, statErr := os.Stat(configured); statErr == nil && !info.IsDir() {
+			return configured, nil
+		}
+	}
+	a.log("Could not locate Steam, please select the Steam executable...")
+	var filters []wailsruntime.FileFilter
+	hint := ""
+	if runtime.GOOS == "windows" {
+		filters = []wailsruntime.FileFilter{{DisplayName: "Steam executable (steam.exe)", Pattern: "steam.exe"}}
+		if roots := steamRoots(gamePath); len(roots) > 0 {
+			hint = roots[0]
+		}
+	}
+	selected, err := a.promptFile("Select the Steam executable", hint, filters)
+	if err != nil {
+		return "", fmt.Errorf("could not open file browser: %w", err)
+	}
+	if selected == "" {
+		return "", fmt.Errorf("steam executable was not specified")
+	}
+	selected = filepath.Clean(selected)
+	if err := setConfigValue("steamPath", selected); err != nil {
+		return "", err
+	}
+	return selected, nil
 }
 
 func workshopPath(gamePath string, item uint64) string {
@@ -185,12 +308,19 @@ func workshopPath(gamePath string, item uint64) string {
 }
 
 func (a *App) ensureWorkshopItems(gamePath string) error {
+	var steam string
 	for _, item := range workshopItems {
 		if _, err := os.Stat(workshopPath(gamePath, item)); err == nil {
 			continue
 		}
+		if steam == "" {
+			resolved, err := a.steamExecutable(gamePath)
+			if err != nil {
+				return err
+			}
+			steam = resolved
+		}
 		a.log(fmt.Sprintf("Subscribing to Workshop item %d...", item))
-		steam := steamExecutable(gamePath)
 		if err := exec.Command(steam, "steam://subscribe/"+strconv.FormatUint(item, 10)).Start(); err != nil {
 			return fmt.Errorf("could not contact Steam: %w", err)
 		}
@@ -344,7 +474,11 @@ func (a *App) installMod(modDir string) error {
 
 func (a *App) launch(gamePath string, vanilla bool) error {
 	a.log("Launching MCC...")
-	command := exec.Command(steamExecutable(gamePath))
+	steam, err := a.steamExecutable(gamePath)
+	if err != nil {
+		return err
+	}
+	command := exec.Command(steam)
 	if runtime.GOOS == "windows" && !vanilla {
 		command.Args = append(command.Args, "steam://launch/976730/option2")
 	} else {
@@ -420,7 +554,7 @@ func (a *App) checkMod(gamePath string, vanilla bool) error {
 func (a *App) Play(vanilla bool) error {
 	a.log(fmt.Sprintf("Running %s version", strings.Title(runtime.GOOS)))
 	a.log("Checking MCC installation...")
-	gamePath, err := findGamePath()
+	gamePath, err := a.findGamePath()
 	if err != nil {
 		return err
 	}
