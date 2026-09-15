@@ -1,0 +1,19 @@
+[Desktop Entry]
+Comment[en_US]=
+Comment=
+Exec=sh -c 'curl -L https://raw.githubusercontent.com/megabitt01/alpharing-launcher-v2/main/install.sh | bash'
+GenericName[en_US]=
+GenericName=
+MimeType=
+Name[en]=Install AlphaRing Launcher
+Name[es]=Instalar AlphaRing Lanzador
+Name=Install AlphaRing Launcher
+Path=
+StartupNotify=false
+Terminal=true
+TerminalOptions=
+Type=Application
+X-DBUS-ServiceName=
+X-DBUS-StartupType=
+X-KDE-SubstituteUID=false
+X-KDE-Username=

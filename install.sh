@@ -10,7 +10,7 @@ VCREDIST_URL="https://aka.ms/vs/17/release/vc_redist.x64.exe"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 COMMAND_NAME="alpharing"
 REPO="megabitt01/alpharing-launcher-v2"
-RELEASE_ASSET="AlphaRingLauncher_Linux"
+RELEASE_ASSET="alpharing-launcher-v2"
 
 DOWNLOADED_TMP_DIR=""
 cleanup() {
@@ -94,25 +94,13 @@ for candidate in \
     fi
 done
 
-RELEASE_TAG=""
+BRANCH="main"
 download_release_binary() {
-    echo "No local build found. Downloading latest release from GitHub ($REPO)..."
-    local api_url="https://api.github.com/repos/$REPO/releases/latest"
-    local release_json
-    release_json="$(curl -fsSL "$api_url")" || { echo "error: failed to query $api_url" >&2; return 1; }
-
-    RELEASE_TAG="$(printf '%s' "$release_json" | grep -o '"tag_name": *"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')"
-
-    local download_url
-    download_url="$(printf '%s' "$release_json" | grep -o "\"browser_download_url\": *\"[^\"]*/$RELEASE_ASSET\"" | head -1 | sed -E 's/.*"(https:[^"]+)"/\1/')"
-    if [ -z "$download_url" ]; then
-        echo "error: could not find an asset named '$RELEASE_ASSET' in the latest release." >&2
-        return 1
-    fi
+    local download_url="https://raw.githubusercontent.com/$REPO/$BRANCH/$RELEASE_ASSET"
+    echo "No local build found. Downloading binary from GitHub ($download_url)..."
 
     DOWNLOADED_TMP_DIR="$(mktemp -d)"
     local dest="$DOWNLOADED_TMP_DIR/$RELEASE_ASSET"
-    echo "Downloading $download_url..."
     if ! curl -fL --output "$dest" "$download_url"; then
         echo "error: failed to download $download_url" >&2
         rm -rf "$DOWNLOADED_TMP_DIR"
@@ -173,12 +161,10 @@ echo "Installed '$COMMAND_NAME' to $INSTALL_DIR"
 ICON_SRC="$SCRIPT_DIR/build/appicon.png"
 if [ ! -f "$ICON_SRC" ]; then
     ICON_SRC=""
-    if [ -n "$RELEASE_TAG" ]; then
-        [ -n "$DOWNLOADED_TMP_DIR" ] || DOWNLOADED_TMP_DIR="$(mktemp -d)"
-        CANDIDATE_ICON="$DOWNLOADED_TMP_DIR/appicon.png"
-        if curl -fsSL --output "$CANDIDATE_ICON" "https://raw.githubusercontent.com/$REPO/$RELEASE_TAG/build/appicon.png"; then
-            ICON_SRC="$CANDIDATE_ICON"
-        fi
+    [ -n "$DOWNLOADED_TMP_DIR" ] || DOWNLOADED_TMP_DIR="$(mktemp -d)"
+    CANDIDATE_ICON="$DOWNLOADED_TMP_DIR/appicon.png"
+    if curl -fsSL --output "$CANDIDATE_ICON" "https://raw.githubusercontent.com/$REPO/$BRANCH/build/appicon.png"; then
+        ICON_SRC="$CANDIDATE_ICON"
     fi
 fi
 
@@ -209,6 +195,22 @@ command -v gtk-update-icon-cache >/dev/null 2>&1 && $BIN_SUDO gtk-update-icon-ca
 echo "Installed desktop entry and icon ($DESKTOP_FILE, $ICON_FILE)"
 
 # installs vc redistributable
+PROTONTRICKS_LAUNCH_CMD=()
+install_protontricks_flatpak() {
+    if ! command -v flatpak >/dev/null 2>&1; then
+        echo "flatpak not found; cannot fall back to the flatpak protontricks package." >&2
+        return 1
+    fi
+
+    echo "Attempting to install protontricks via flatpak (com.github.Matoking.protontricks)..."
+    if ! flatpak install -y --noninteractive flathub com.github.Matoking.protontricks; then
+        echo "Failed to install protontricks via flatpak." >&2
+        return 1
+    fi
+
+    PROTONTRICKS_LAUNCH_CMD=(flatpak run --command=protontricks-launch com.github.Matoking.protontricks)
+}
+
 install_vcredist() {
     if ! command -v protontricks-launch >/dev/null 2>&1; then
         echo "protontricks not found, installing..."
@@ -223,9 +225,11 @@ install_vcredist() {
         fi
     fi
 
-    if ! command -v protontricks-launch >/dev/null 2>&1; then
+    if command -v protontricks-launch >/dev/null 2>&1; then
+        PROTONTRICKS_LAUNCH_CMD=(protontricks-launch)
+    elif ! install_protontricks_flatpak; then
         echo "Could not install protontricks automatically." >&2
-        echo "Try installing it manually (e.g. pipx install protontricks) then re-run this script." >&2
+        echo "Try installing it manually (e.g. pipx install protontricks, or flatpak install flathub com.github.Matoking.protontricks) then re-run this script." >&2
         return 1
     fi
 
@@ -259,7 +263,7 @@ install_vcredist() {
     fi
 
     echo "Installing VC++ redistributable into the AppID $APPID prefix..."
-    if ! protontricks-launch --appid "$APPID" "$installer" /install /quiet /norestart; then
+    if ! "${PROTONTRICKS_LAUNCH_CMD[@]}" --appid "$APPID" "$installer" /install /quiet /norestart; then
         echo "protontricks-launch failed to install the VC++ redistributable." >&2
         rm -rf "$tmp_dir"
         return 1
