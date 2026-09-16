@@ -479,16 +479,10 @@ func (a *App) launch(gamePath string, vanilla bool) error {
 		return err
 	}
 	command := exec.Command(steam)
-	if runtime.GOOS == "windows" && !vanilla {
+	if !vanilla {
 		command.Args = append(command.Args, "steam://launch/976730/option2")
 	} else {
-		command.Args = append(command.Args, "-applaunch", "976730")
-		if !vanilla {
-			command.Args = append(command.Args, "-eac")
-		}
-	}
-	if runtime.GOOS == "linux" && !vanilla {
-		command.Env = append(os.Environ(), "WINEDLLOVERRIDES=WTSAPI32=n,b")
+		command.Args = append(command.Args, "steam://launch/976730/option1")
 	}
 	if err := command.Start(); err != nil {
 		return err
