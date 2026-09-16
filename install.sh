@@ -252,7 +252,9 @@ install_vcredist() {
     echo "Found Proton prefix: $prefix"
 
     local tmp_dir
-    tmp_dir="$(mktemp -d)"
+    # using a temp dir as a fallback
+    mkdir -p "$HOME/.cache"
+    tmp_dir="$(mktemp -d "$HOME/.cache/alpharing-vcredist.XXXXXX")"
     local installer="$tmp_dir/vc_redist.x64.exe"
 
     echo "Downloading vc_redist.x64.exe..."
