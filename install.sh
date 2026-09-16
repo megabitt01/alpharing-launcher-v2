@@ -208,7 +208,16 @@ install_protontricks_flatpak() {
         return 1
     fi
 
+    grant_protontricks_flatpak_home_access
     PROTONTRICKS_LAUNCH_CMD=(flatpak run --command=protontricks-launch com.github.Matoking.protontricks)
+}
+
+# The flatpak sandbox only exposes specific Steam paths by default (and its
+# own private /tmp, which no override can reach), so protontricks-launch
+# can't resolve() a temp file we hand it unless it lives under $HOME and the
+# sandbox has been granted access to $HOME explicitly.
+grant_protontricks_flatpak_home_access() {
+    flatpak override --user --filesystem=home com.github.Matoking.protontricks
 }
 
 install_vcredist() {
