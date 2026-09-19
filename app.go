@@ -69,11 +69,11 @@ func (a *App) log(message string) {
 func configDir() (string, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
-		exe, exeErr := os.Executable()
-		if exeErr != nil {
-			return "", exeErr
+		home, homeErr := os.UserHomeDir()
+		if homeErr != nil {
+			return "", homeErr
 		}
-		return filepath.Dir(exe), nil
+		dir = filepath.Join(home, ".config")
 	}
 	return filepath.Join(dir, "alpharing"), nil
 }
