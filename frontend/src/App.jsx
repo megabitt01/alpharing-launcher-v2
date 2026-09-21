@@ -9,7 +9,8 @@ import "./App.css";
 const CLOSE_DELAY_MS = 1000;
 const ERROR_DISPLAY_MS = 2000;
 const ACTION_TIMEOUT_MS = 10000;
-const GAMEPAD_AXIS_DEADZONE = 0.5;
+const GAMEPAD_AXIS_DEADZONE = 0.65;
+const GAMEPAD_MOVE_COOLDOWN_MS = 200;
 const VIDEO_MIME_TYPES = { mp4: "video/mp4", webm: "video/webm" };
 const DEFAULT_VIDEO_SOURCES = [
   { src: bkgVideoWebm, type: VIDEO_MIME_TYPES.webm },
@@ -126,6 +127,7 @@ function App({ buildInfo = "", modInfo: initialModInfo = "" }) {
   useEffect(() => {
     let frame;
     const held = { prev: false, next: false, confirm: false };
+    let lastMoveTime = 0;
     const poll = () => {
       const pads = navigator.getGamepads ? navigator.getGamepads() : [];
       const gamepad = Array.prototype.find.call(pads, Boolean);
@@ -135,8 +137,13 @@ function App({ buildInfo = "", modInfo: initialModInfo = "" }) {
         const prev = gamepad.buttons[12]?.pressed || gamepad.buttons[14]?.pressed || axisY < -GAMEPAD_AXIS_DEADZONE || axisX < -GAMEPAD_AXIS_DEADZONE;
         const next = gamepad.buttons[13]?.pressed || gamepad.buttons[15]?.pressed || axisY > GAMEPAD_AXIS_DEADZONE || axisX > GAMEPAD_AXIS_DEADZONE;
         const confirm = gamepad.buttons[0]?.pressed ?? false;
-        if (prev && !held.prev) moveSelection(-1);
-        if (next && !held.next) moveSelection(1);
+        const now = performance.now();
+        // Analog stick noise near the deadzone threshold can flicker `held.prev`/`held.next`
+        // false->true within a single physical push; the cooldown stops that from
+        // registering as a second move.
+        const canMove = now - lastMoveTime >= GAMEPAD_MOVE_COOLDOWN_MS;
+        if (prev && !held.prev && canMove) { moveSelection(-1); lastMoveTime = now; }
+        if (next && !held.next && canMove) { moveSelection(1); lastMoveTime = now; }
         if (confirm && !held.confirm) runAction(selectedIndexRef.current);
         held.prev = prev; held.next = next; held.confirm = confirm;
       }

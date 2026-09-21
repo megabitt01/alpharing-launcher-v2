@@ -1,3 +1,5 @@
 build/bin
 node_modules
 frontend/dist
+assets/steamworks/libsteam_api.so
+assets/steamworks/steam_api64.dll

@@ -308,35 +308,23 @@ func workshopPath(gamePath string, item uint64) string {
 }
 
 func (a *App) ensureWorkshopItems(gamePath string) error {
-	var steam string
+	var missing []uint64
 	for _, item := range workshopItems {
-		if _, err := os.Stat(workshopPath(gamePath, item)); err == nil {
-			continue
-		}
-		if steam == "" {
-			resolved, err := a.steamExecutable(gamePath)
-			if err != nil {
-				return err
-			}
-			steam = resolved
-		}
-		a.log(fmt.Sprintf("Subscribing to Workshop item %d...", item))
-		if err := exec.Command(steam, "steam://subscribe/"+strconv.FormatUint(item, 10)).Start(); err != nil {
-			return fmt.Errorf("could not contact Steam: %w", err)
-		}
-		deadline := time.Now().Add(10 * time.Minute)
-		for time.Now().Before(deadline) {
-			if _, err := os.Stat(workshopPath(gamePath, item)); err == nil {
-				a.log(fmt.Sprintf("Workshop item %d installed", item))
-				break
-			}
-			time.Sleep(200 * time.Millisecond)
-		}
 		if _, err := os.Stat(workshopPath(gamePath, item)); err != nil {
-			return fmt.Errorf("Workshop item %d did not finish downloading", item)
+			missing = append(missing, item)
 		}
 	}
-	return nil
+	if len(missing) == 0 {
+		return nil
+	}
+
+	sw, err := newSteamworksClient()
+	if err != nil {
+		return fmt.Errorf("could not connect to Steam to fetch Workshop items: %w", err)
+	}
+	defer sw.shutdown()
+
+	return sw.subscribeAndDownload(a, gamePath, missing)
 }
 
 type release struct {

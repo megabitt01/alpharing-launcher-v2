@@ -3,6 +3,7 @@ module alpharing-launcher-v2
 go 1.25.0
 
 require (
+	github.com/ebitengine/purego v0.11.0
 	github.com/wailsapp/wails/v2 v2.15.0
 	golang.org/x/sys v0.46.0
 )
