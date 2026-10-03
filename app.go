@@ -22,6 +22,12 @@ import (
 type App struct {
 	ctx             context.Context
 	videoServerBase string
+	// waitForGame is set by the -wait flag: instead of quitting as soon as
+	// Steam has been told to launch MCC, the launcher hides itself and stays
+	// alive until the game process exits. Frontends such as Playnite track
+	// the launcher process, so this keeps them showing the game as running
+	// (and keeps them from grabbing focus back) for the whole session.
+	waitForGame bool
 }
 
 func NewApp() *App { return &App{} }
@@ -34,11 +40,21 @@ func (a *App) startup(ctx context.Context) {
 		a.log(fmt.Sprintf("Error starting video server: %s", err))
 	}
 	for _, argument := range os.Args[1:] {
-		if argument == "-fullscreen" {
+		switch strings.TrimLeft(argument, "-") {
+		case "fullscreen":
 			wailsruntime.WindowFullscreen(ctx)
-			break
+		case "wait":
+			a.waitForGame = true
 		}
 	}
+}
+
+// domReady runs once the window is up. Frontends like Playnite's fullscreen
+// mode keep a topmost window on screen, so a freshly created launcher window
+// can end up behind it without keyboard focus; focusWindow nudges it to the
+// front (a no-op on platforms where it isn't implemented).
+func (a *App) domReady(ctx context.Context) {
+	go focusWindow(windowTitle)
 }
 
 func (a *App) BackgroundVideoURLs() []string {
@@ -49,13 +65,56 @@ func (a *App) BackgroundVideoURLs() []string {
 }
 
 const (
+	windowTitle    = "AlphaRing Launcher"
 	gameSubpath    = "steamapps/common/Halo The Master Chief Collection"
 	modDLLSubpath  = "MCC/Binaries/Win64"
 	modDLLName     = "WTSAPI32.dll"
 	configFileName = "launcher.cfg"
 	workshopAppID  = 976730
 	releaseURL     = "https://api.github.com/repos/megabitt01/AlphaRing/releases/latest"
+
+	// How long -wait mode allows for MCC to appear after Steam is asked to
+	// launch it. Steam shader pre-caching and the anti-cheat launcher can
+	// take a while, so this is deliberately generous.
+	gameStartTimeout    = 10 * time.Minute
+	processPollInterval = 1 * time.Second
+	// The anti-cheat launcher exits before the game executable is up, so a
+	// single empty poll doesn't mean MCC has closed; require this many in a
+	// row before treating the game as exited.
+	gameExitGracePolls = 5
+	// After MCC starts, how long -wait mode keeps handing focus to newly
+	// appearing game windows (anti-cheat splash, then the game itself).
+	gameFocusWindow = 3 * time.Minute
 )
+
+// gameProcess is a running process that counts as "the game": on Windows any
+// executable under the MCC folder, on Linux anything Steam launched with
+// MCC's app ID (see process_*.go).
+type gameProcess struct {
+	pid  uint32
+	name string
+}
+
+func processNames(procs []gameProcess) []string {
+	names := make([]string, 0, len(procs))
+	for _, proc := range procs {
+		names = append(names, proc.name)
+	}
+	return names
+}
+
+func processIDs(procs []gameProcess) []uint32 {
+	pids := make([]uint32, 0, len(procs))
+	for _, proc := range procs {
+		pids = append(pids, proc.pid)
+	}
+	return pids
+}
+
+// processRunningUnder reports whether any game process is currently running.
+func processRunningUnder(dir string) bool {
+	return len(matchingProcesses(dir)) > 0
+}
 
 var workshopItems = []uint64{3686670451, 3730810482}
 
@@ -475,9 +534,68 @@ func (a *App) launch(gamePath string, vanilla bool) error {
 	if err := command.Start(); err != nil {
 		return err
 	}
+	if a.waitForGame {
+		a.log("Game launched, waiting for MCC to close...")
+		wailsruntime.WindowHide(a.ctx)
+		go func() {
+			a.waitForGameExit(gamePath)
+			wailsruntime.Quit(a.ctx)
+		}()
+		return nil
+	}
 	a.log("Game launched, closing launcher...")
 	wailsruntime.Quit(a.ctx)
 	return nil
+}
+
+// waitForGameExit blocks until a game process appears under gamePath and
+// then disappears again, so the launcher process outlives the whole MCC
+// session in -wait mode. If the game never starts within gameStartTimeout
+// (e.g. the Steam launch was cancelled), it gives up rather than lingering
+// as a hidden process forever.
+func (a *App) waitForGameExit(gamePath string) {
+	deadline := time.Now().Add(gameStartTimeout)
+	procs := matchingProcesses(gamePath)
+	for len(procs) == 0 {
+		if time.Now().After(deadline) {
+			a.log("MCC did not start within the wait timeout, giving up.")
+			return
+		}
+		time.Sleep(processPollInterval)
+		procs = matchingProcesses(gamePath)
+	}
+	a.log(fmt.Sprintf("Game process detected: %s", strings.Join(processNames(procs), ", ")))
+
+	// Steam starts MCC, not the launcher, so once the launcher has hidden
+	// itself Windows won't let the game take the foreground on its own. For
+	// a while after launch, hand focus to each new game window as it appears
+	// (the anti-cheat splash first, then the game itself). Only windows that
+	// haven't been seen before are focused, so this never fights the user
+	// alt-tabbing away later.
+	focuser := newGameFocuser()
+	focusUntil := time.Now().Add(gameFocusWindow)
+	missing := 0
+	for tick := 0; ; tick++ {
+		procs = matchingProcesses(gamePath)
+		if len(procs) == 0 {
+			missing++
+			if missing >= gameExitGracePolls {
+				break
+			}
+		} else {
+			missing = 0
+			if time.Now().Before(focusUntil) && focuser.focusNewWindows(processIDs(procs)) {
+				a.log("Brought the game window to the front")
+			}
+			// Re-log periodically (not every poll) so anyone stuck here can
+			// see exactly which process is being waited on.
+			if tick%30 == 0 {
+				a.log(fmt.Sprintf("Waiting for MCC to close (still running: %s)...", strings.Join(processNames(procs), ", ")))
+			}
+		}
+		time.Sleep(processPollInterval)
+	}
+	a.log("MCC closed, exiting launcher.")
 }
 
 func (a *App) checkMod(gamePath string, vanilla bool) error {

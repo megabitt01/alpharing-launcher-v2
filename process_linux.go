@@ -36,21 +36,30 @@ var nonGameProcessNames = map[string]bool{
 	"explorer.exe":   true,
 }
 
-// matchingProcessNames returns a "comm(pid)" descriptor for every process
-// currently making processRunningUnder report the game as running, so
+// matchingProcesses returns every process currently making
+// processRunningUnder report the game as running, named "comm(pid)" so
 // callers can surface exactly what's being waited on instead of guessing.
-func matchingProcessNames(dir string) []string {
+//
+// gamePath's Unix path doesn't correspond 1:1 with what Proton/wine report
+// as a process's exe or argv (the game runs under a translated Windows path
+// inside the compatdata prefix), so instead this checks every process's
+// environment for the SteamAppId Steam sets on the whole launch tree -
+// reaper, Proton, wineserver, and the game executable itself - while
+// excluding processes that aren't a reliable sign of the game actually
+// running (see nonGameProcessNames).
+func matchingProcesses(dir string) []gameProcess {
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
 		return nil
 	}
 	want := "SteamAppId=" + strconv.Itoa(workshopAppID)
-	var matches []string
+	var matches []gameProcess
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
-		if _, err := strconv.Atoi(entry.Name()); err != nil {
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil {
 			continue
 		}
 		comm, err := os.ReadFile("/proc/" + entry.Name() + "/comm")
@@ -67,22 +76,10 @@ func matchingProcessNames(dir string) []string {
 		}
 		for _, kv := range strings.Split(string(environ), "\x00") {
 			if kv == want {
-				matches = append(matches, name+"("+entry.Name()+")")
+				matches = append(matches, gameProcess{pid: uint32(pid), name: name + "(" + entry.Name() + ")"})
 				break
 			}
 		}
 	}
 	return matches
-}
-
-// processRunningUnder reports whether MCC is currently running. gamePath's
-// Unix path doesn't correspond 1:1 with what Proton/wine report as a
-// process's exe or argv (the game runs under a translated Windows path
-// inside the compatdata prefix), so instead this checks every process's
-// environment for the SteamAppId Steam sets on the whole launch tree -
-// reaper, Proton, wineserver, and the game executable itself - while
-// excluding processes that aren't a reliable sign of the game actually
-// running (see nonGameProcessNames).
-func processRunningUnder(dir string) bool {
-	return len(matchingProcessNames(dir)) > 0
 }
