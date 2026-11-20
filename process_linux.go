@@ -44,7 +44,7 @@ func matchingProcessNames(dir string) []string {
 	if err != nil {
 		return nil
 	}
-	want := "SteamAppId=" + strconv.Itoa(workshopAppID)
+	want := "SteamAppId=" + strconv.Itoa(mccAppID)
 	var matches []string
 	for _, entry := range entries {
 		if !entry.IsDir() {
