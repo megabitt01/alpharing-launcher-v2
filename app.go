@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 
@@ -70,7 +69,7 @@ const (
 	modDLLSubpath  = "MCC/Binaries/Win64"
 	modDLLName     = "WTSAPI32.dll"
 	configFileName = "launcher.cfg"
-	workshopAppID  = 976730
+	mccAppID       = 976730
 	releaseURL     = "https://api.github.com/repos/megabitt01/AlphaRing/releases/latest"
 
 	// How long -wait mode allows for MCC to appear after Steam is asked to
@@ -361,31 +360,6 @@ func (a *App) steamExecutable(gamePath string) (string, error) {
 	return selected, nil
 }
 
-func workshopPath(gamePath string, item uint64) string {
-	steamapps := filepath.Dir(filepath.Dir(gamePath))
-	return filepath.Join(steamapps, "workshop", "content", strconv.Itoa(workshopAppID), strconv.FormatUint(item, 10))
-}
-
-func (a *App) ensureWorkshopItems(gamePath string) error {
-	var missing []uint64
-	for _, item := range workshopItems {
-		if _, err := os.Stat(workshopPath(gamePath, item)); err != nil {
-			missing = append(missing, item)
-		}
-	}
-	if len(missing) == 0 {
-		return nil
-	}
-
-	sw, err := newSteamworksClient()
-	if err != nil {
-		return fmt.Errorf("could not connect to Steam to fetch Workshop items: %w", err)
-	}
-	defer sw.shutdown()
-
-	return sw.subscribeAndDownload(a, gamePath, missing)
-}
-
 type release struct {
 	TagName string `json:"tag_name"`
 	Assets  []struct {
@@ -659,9 +633,6 @@ func (a *App) Play(vanilla bool) error {
 		return err
 	}
 	a.log(fmt.Sprintf("Found game installation at %s", gamePath))
-	if err := a.ensureWorkshopItems(gamePath); err != nil {
-		return err
-	}
 	return a.checkMod(gamePath, vanilla)
 }
 
