@@ -27,7 +27,7 @@ func main() {
 
 	// Create application with options
 	err := wails.Run(&options.App{
-		Title:  "AlphaRing Launcher",
+		Title:  windowTitle,
 		Width:  1024,
 		Height: 768,
 		AssetServer: &assetserver.Options{
@@ -43,7 +43,8 @@ func main() {
 			ProgramName:      "alpharing",
 			WebviewGpuPolicy: linux.WebviewGpuPolicyAlways,
 		},
-		OnStartup: app.startup,
+		OnStartup:  app.startup,
+		OnDomReady: app.domReady,
 		Bind: []interface{}{
 			app,
 		},

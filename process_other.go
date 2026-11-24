@@ -2,11 +2,7 @@
 
 package main
 
-// processRunningUnder is only implemented on Windows and Linux.
-func processRunningUnder(dir string) bool {
-	return false
-}
-
-func matchingProcessNames(dir string) []string {
+// Game process detection is only implemented on Windows and Linux.
+func matchingProcesses(dir string) []gameProcess {
 	return nil
 }
